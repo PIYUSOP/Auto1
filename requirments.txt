@@ -1,0 +1,6 @@
+telethon
+pymongo
+beautifulsoup4
+requests
+aiohttp==3.9.5
+dnspython
