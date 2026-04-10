@@ -62,18 +62,20 @@ JAPANESE_VIDEO_COUNT = (10, 15)
 # MongoDB
 MONGO_URI = "mongodb://bronaing371:musicbotmyanmar@ac-qy84yob-shard-00-00.nc4wqzb.mongodb.net:27017,ac-qy84yob-shard-00-01.nc4wqzb.mongodb.net:27017,ac-qy84yob-shard-00-02.nc4wqzb.mongodb.net:27017/?authSource=admin&replicaSet=atlas-uk3oy7-shard-0&tls=true"
 
-# Scraper configuration
+# Scraper configuration - UPDATED
 SCRAPER_CONFIG = {
     'base_url': 'https://lol49.org',
     'headers': {
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'accept-language': 'en-US,en;q=0.9',
-        'referer': 'https://www.google.com/',
-        'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36',
+        'cache-control': 'no-cache',
+        'pragma': 'no-cache',
+        'referer': 'https://lol49.org/',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     },
     'video_headers': {
         'Referer': 'https://lol49.org/',
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 }
 
@@ -161,12 +163,12 @@ async def get_random_unused_image() -> Optional[Dict]:
         return None
 
 
-# ============= BATCH LINK GENERATION - FIXED =============
+# ============= BATCH LINK GENERATION =============
 async def get_batch_link_from_bot(batch_bot_username: str, source_channel: int = None, 
                                   message_ids: List[int] = None, video_paths: List[str] = None,
                                   db_channel: int = None, db_message_id: int = None) -> Optional[str]:
     """
-    Universal batch link generator - ONLY clicks buttons from current response message
+    Universal batch link generator
     """
     try:
         logger.info(f"Getting batch link from {batch_bot_username}")
@@ -177,29 +179,24 @@ async def get_batch_link_from_bot(batch_bot_username: str, source_channel: int =
             logger.info("Sent /custom_batch")
             await asyncio.sleep(3)
             
-            # Handle initial response (like "Send me videos" or button)
+            # Handle initial response
             try:
                 response = await conv.get_response(timeout=10)
                 logger.info(f"Initial response: {response.text[:100] if response.text else 'No text'}")
                 
-                # If there's a button to start, click it
                 if response.buttons:
                     for row in response.buttons:
                         for button in row:
-                            button_text = button.text
-                            logger.info(f"Initial button: {button_text}")
-                            if any(kw in button_text.lower() for kw in ['new', 'batch', 'create', 'start']):
-                                logger.info(f"Clicking initial button: {button_text}")
+                            if any(kw in button.text.lower() for kw in ['new', 'batch', 'create', 'start']):
+                                logger.info(f"Clicking initial: {button.text}")
                                 await button.click()
                                 await asyncio.sleep(3)
                                 response = await conv.get_response(timeout=10)
-                                logger.info(f"After initial click: {response.text[:100] if response.text else 'No text'}")
             except asyncio.TimeoutError:
-                logger.info("No initial response")
+                pass
             
             # Send video(s)
             if db_channel and db_message_id:
-                logger.info(f"Forwarding from DB channel")
                 await session_client.forward_messages(batch_bot_username, db_message_id, db_channel)
             elif video_paths:
                 for path in video_paths:
@@ -215,82 +212,54 @@ async def get_batch_link_from_bot(batch_bot_username: str, source_channel: int =
             
             await asyncio.sleep(5)
             
-            # Get the response after sending videos (THIS is the message with the generate button)
+            # Get response and click generate button
             try:
                 response = await conv.get_response(timeout=30)
                 logger.info(f"Response after videos: {response.text[:200] if response.text else 'No text'}")
                 
-                # ONLY click buttons from THIS response message
                 if response.buttons:
-                    logger.info(f"Found {len(response.buttons)} button rows in current message")
                     for row in response.buttons:
                         for button in row:
                             button_text = button.text
-                            logger.info(f"Button in current message: '{button_text}'")
-                            
-                            # Look for generate button
-                            button_lower = button_text.lower()
-                            if ('generate' in button_lower or 
-                                'link' in button_lower or
+                            if ('generate' in button_text.lower() or 
+                                'link' in button_text.lower() or
                                 'ɢᴇɴᴇʀᴀᴛᴇ' in button_text or
                                 'ʟɪɴᴋ' in button_text):
-                                logger.info(f"Clicking generate button: '{button_text}'")
+                                logger.info(f"Clicking generate: {button_text}")
                                 await button.click()
                                 await asyncio.sleep(5)
                                 
-                                # Get the link response
                                 link_response = await conv.get_response(timeout=30)
-                                logger.info(f"Link response: {link_response.text[:300] if link_response.text else 'No text'}")
                                 
-                                # Extract link
                                 if link_response.text:
                                     match = re.search(r'https://t\.me/[^\s]+start=[^\s]+', link_response.text)
                                     if match:
-                                        batch_link = match.group()
-                                        logger.info(f"Found batch link: {batch_link}")
-                                        return batch_link
+                                        return match.group()
                                 
-                                # Check if link is in a button
                                 if link_response.buttons:
                                     for btn_row in link_response.buttons:
                                         for btn in btn_row:
                                             if hasattr(btn, 'url') and btn.url and 'start=' in btn.url:
-                                                logger.info(f"Link in button: {btn.url}")
                                                 return btn.url
-                else:
-                    # No buttons - maybe link is directly in text
-                    if response.text and 'start=' in response.text:
-                        match = re.search(r'https://t\.me/[^\s]+start=[^\s]+', response.text)
-                        if match:
-                            batch_link = match.group()
-                            logger.info(f"Found link directly: {batch_link}")
-                            return batch_link
-                            
             except asyncio.TimeoutError:
-                logger.error("Timeout waiting for response after videos")
+                pass
             
-            # Fallback: scan recent messages (but only as last resort)
-            logger.info("Scanning recent messages as fallback...")
+            # Fallback
             async for msg in session_client.iter_messages(batch_bot_username, limit=10):
                 if msg.text and 'start=' in msg.text:
                     match = re.search(r'https://t\.me/[^\s]+start=[^\s]+', msg.text)
                     if match:
-                        batch_link = match.group()
-                        logger.info(f"Found in recent message: {batch_link}")
-                        return batch_link
+                        return match.group()
                 if msg.buttons:
                     for row in msg.buttons:
                         for button in row:
                             if hasattr(button, 'url') and button.url and 'start=' in button.url:
-                                logger.info(f"Found in recent button: {button.url}")
                                 return button.url
             
-            logger.error("No batch link found")
             return None
             
     except Exception as e:
         logger.error(f"Error: {e}")
-        traceback.print_exc()
         return None
 
 
@@ -374,90 +343,161 @@ async def get_unused_videos_from_channel(channel_id: int, bot_name: str, collect
         return []
 
 
-# ============= SCRAPER FUNCTIONS =============
+# ============= SCRAPER FUNCTIONS - FIXED =============
 async def scrape_multiple_videos(count: int) -> List[Dict]:
+    """Scrape multiple videos from lol49.org - FIXED for current structure"""
     videos = []
-    pages_to_scrape = max(5, count // 3)
     
     try:
-        page_num = 1
-        base_url = SCRAPER_CONFIG['base_url']
-        pages_scraped = 0
+        headers = {
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'accept-language': 'en-US,en;q=0.9',
+            'cache-control': 'no-cache',
+            'pragma': 'no-cache',
+            'referer': 'https://lol49.org/',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
         
-        while len(videos) < count and pages_scraped < pages_to_scrape:
-            page_url = f"{base_url}/" if page_num == 1 else f"{base_url}/page/{page_num}/"
-            logger.info(f"Scraping page {page_num}")
+        page_num = 1
+        base_url = 'https://lol49.org'
+        
+        while len(videos) < count and page_num <= 20:
+            # Construct URL
+            if page_num == 1:
+                page_url = f"{base_url}/"
+            else:
+                page_url = f"{base_url}/page/{page_num}/"
             
-            resp = requests.get(page_url, headers=SCRAPER_CONFIG['headers'], timeout=15)
-            resp.raise_for_status()
+            logger.info(f"Scraping page {page_num}: {page_url}")
+            
+            try:
+                resp = requests.get(page_url, headers=headers, timeout=20)
+                resp.raise_for_status()
+            except Exception as e:
+                logger.error(f"Failed to fetch page {page_num}: {e}")
+                page_num += 1
+                continue
+            
             soup = BeautifulSoup(resp.text, "html.parser")
             
-            for a_title in soup.find_all("a", class_="title", href=True):
+            # Find all video items
+            video_items = soup.find_all("li", class_="video")
+            
+            if not video_items:
+                logger.warning(f"No video items found on page {page_num}")
+                page_num += 1
+                continue
+            
+            logger.info(f"Found {len(video_items)} video items on page {page_num}")
+            
+            for item in video_items:
                 if len(videos) >= count:
                     break
-                    
-                href = a_title["href"].strip()
-                if not href or not (href.startswith('/') or 'lol49.org' in href):
-                    continue
-                    
-                full = urljoin(base_url, href)
-                title_text = a_title.get_text(strip=True)
                 
-                if used_videos_collection.find_one({'url': full}):
+                # Get title and video URL
+                title_elem = item.find("a", class_="title")
+                if not title_elem:
                     continue
                 
-                thumb_block = a_title.find_previous("a", class_="thumb")
-                img_el = thumb_block.find("img") if thumb_block else None
-                dur_el = thumb_block.find("span", class_="video-duration") if thumb_block else None
+                title = title_elem.get_text(strip=True)
+                video_url = title_elem.get("href", "")
+                
+                if not video_url:
+                    continue
+                
+                if not video_url.startswith("http"):
+                    video_url = urljoin(base_url, video_url)
+                
+                # Check if already used
+                existing = used_videos_collection.find_one({'url': video_url})
+                if existing:
+                    logger.info(f"Skipping already used: {title[:30]}")
+                    continue
+                
+                # Get duration
+                duration_elem = item.find("span", class_="video-duration")
+                duration = duration_elem.get_text(strip=True) if duration_elem else "Unknown"
+                
+                # Get thumbnail
+                thumb_elem = item.find("img")
+                thumb_url = None
+                if thumb_elem and thumb_elem.get("src"):
+                    thumb_url = thumb_elem["src"]
+                    if not thumb_url.startswith("http"):
+                        thumb_url = urljoin(base_url, thumb_url)
                 
                 try:
-                    r_page = requests.get(full, headers=SCRAPER_CONFIG['video_headers'], timeout=12)
-                    sp = BeautifulSoup(r_page.text, "html.parser")
+                    # Get the video page to extract download link
+                    logger.info(f"Fetching video page")
+                    video_page_resp = requests.get(video_url, headers=headers, timeout=15)
+                    video_soup = BeautifulSoup(video_page_resp.text, "html.parser")
                     
                     direct_link = None
-                    down_div = sp.find("div", class_="downLink")
-                    if down_div:
-                        form = down_div.find("form")
-                        if form and form.get("action"):
-                            direct_link = urljoin(full, form["action"])
                     
+                    # Look for video source tag
+                    video_tag = video_soup.find("video")
+                    if video_tag:
+                        source_tag = video_tag.find("source")
+                        if source_tag and source_tag.get("src"):
+                            direct_link = source_tag["src"]
+                            logger.info(f"Found video source")
+                    
+                    # Look for download form action
                     if not direct_link:
-                        for form in sp.find_all("form"):
-                            btn = form.find("button")
-                            if btn and "Download Clip" in btn.get_text(strip=True):
-                                action = form.get("action")
-                                if action:
-                                    direct_link = urljoin(full, action)
-                                    break
+                        download_div = video_soup.find("div", class_="downLink")
+                        if download_div:
+                            form = download_div.find("form")
+                            if form and form.get("action"):
+                                direct_link = form["action"]
+                                if not direct_link.startswith("http"):
+                                    direct_link = urljoin(video_url, direct_link)
+                                logger.info(f"Found download form")
                     
                     if direct_link:
                         videos.append({
-                            "title": title_text,
-                            "duration": dur_el.get_text(strip=True) if dur_el else "Unknown",
-                            "thumb_url": img_el["src"] if img_el and img_el.get("src") else None,
-                            "page": full,
+                            "title": title,
+                            "duration": duration,
+                            "thumb_url": thumb_url,
+                            "page": video_url,
                             "download_url": direct_link
                         })
                         
                         used_videos_collection.insert_one({
-                            'url': full,
-                            'title': title_text,
+                            'url': video_url,
+                            'title': title,
+                            'duration': duration,
+                            'download_url': direct_link,
                             'timestamp': datetime.now()
                         })
                         
-                        logger.info(f"Found video {len(videos)}/{count}")
+                        logger.info(f"✓ Found video {len(videos)}/{count}: {title[:40]}")
                         await asyncio.sleep(1)
+                    else:
+                        logger.warning(f"✗ No download link for: {title[:40]}")
                         
                 except Exception as e:
+                    logger.error(f"Error processing: {e}")
                     continue
             
+            # Check for next page
+            next_link = soup.find("a", string="Next")
+            if not next_link:
+                logger.info(f"No more pages after page {page_num}")
+                break
+            
             page_num += 1
-            pages_scraped += 1
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
+        
+        if not videos:
+            logger.error("No new videos found")
+        else:
+            logger.info(f"Successfully scraped {len(videos)} new videos")
         
         return videos
+        
     except Exception as e:
         logger.error(f"Scraper error: {e}")
+        traceback.print_exc()
         return videos
 
 
@@ -466,6 +506,10 @@ async def post_viral_heaven():
     logger.info("Starting Viral Heaven post")
     
     try:
+        if not VIRAL_SOURCE or not VIRAL_TARGET or not VIRAL_HEAVEN_BOT:
+            logger.info("Viral Heaven not configured, skipping")
+            return True
+        
         await cache_channel_messages(VIRAL_SOURCE, 'cache_viral')
         cache_collection = db['cache_viral']
         
@@ -639,6 +683,10 @@ async def post_japanese_bot():
     logger.info("Starting Japanese Bot post")
     
     try:
+        if not JAPANESE_SOURCE or not JAPANESE_TARGET or not JAPANESE_BOT:
+            logger.info("Japanese Bot not configured, skipping")
+            return True
+        
         await cache_channel_messages(JAPANESE_SOURCE, 'cache_japanese')
         cache_collection = db['cache_japanese']
         
@@ -751,6 +799,13 @@ async def run_all_posts():
 
 
 # ============= WEB SERVER =============
+keep_alive_task = None
+
+async def keep_alive():
+    while True:
+        await asyncio.sleep(600)
+        logger.info("Keep-alive - dyno still active")
+
 async def handle_all_requests(request):
     path = request.path
     
@@ -766,6 +821,8 @@ async def handle_all_requests(request):
 
 # ============= MAIN =============
 async def main():
+    global keep_alive_task
+    
     logger.info("Starting Telegram Automation Bot")
     logger.info("=" * 60)
     
@@ -776,8 +833,12 @@ async def main():
     logger.info("✓ Bot client connected")
     
     logger.info("Initializing caches...")
-    asyncio.create_task(cache_channel_messages(VIRAL_SOURCE, 'cache_viral'))
-    asyncio.create_task(cache_channel_messages(JAPANESE_SOURCE, 'cache_japanese'))
+    if VIRAL_SOURCE:
+        asyncio.create_task(cache_channel_messages(VIRAL_SOURCE, 'cache_viral'))
+    if JAPANESE_SOURCE:
+        asyncio.create_task(cache_channel_messages(JAPANESE_SOURCE, 'cache_japanese'))
+    
+    keep_alive_task = asyncio.create_task(keep_alive())
     
     app = web.Application()
     app.router.add_route('*', '/', handle_all_requests)
